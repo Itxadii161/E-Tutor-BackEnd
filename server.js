@@ -27,7 +27,7 @@ app.use(express.json()); // Parse JSON bodies
 
 // Routes
 app.use('/api/users', studentUserRoutes);
-app.use('/api/tutors', tutorRoutes);
+app.use('/api', tutorRoutes);
 
 // Basic test route
 app.get('/', (req, res) => {

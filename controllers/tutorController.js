@@ -3,7 +3,7 @@ import User from "../models/studentUserModel.js"; // Updated to point to merged 
 
 const becomeTutor = async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
+    if (!req.user || !req.user._id) {
       return res.status(401).json({ error: "Please log in to apply as a tutor." });
     }
 
