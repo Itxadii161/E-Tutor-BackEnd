@@ -6,11 +6,20 @@ import { OAuth2Client } from 'google-auth-library';
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // ✅ Google login
+
 const googleLogin = async (req, res) => {
+  // Set proper CORS headers
+  res.header('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:5173');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Referrer-Policy', 'no-referrer-when-downgrade');
+
   const { credential } = req.body;
 
   if (!credential) {
-    return res.status(400).json({ success: false, message: 'Google credential is required.' });
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Google credential is required.' 
+    });
   }
 
   try {
@@ -21,38 +30,64 @@ const googleLogin = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const { email, given_name, family_name, picture } = payload;
+    
+    // Validate essential payload data
+    if (!payload.email_verified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Google email not verified'
+      });
+    }
 
-    let user = await User.findOne({ email });
+    const { email, given_name, family_name, picture, sub: googleId } = payload;
+
+    let user = await User.findOne({ 
+      $or: [
+        { email },
+        { googleId }
+      ]
+    });
 
     // If user doesn't exist, create new one
     if (!user) {
       let baseUsername = email.split('@')[0];
       let username = baseUsername;
       let suffix = 1;
+      
+      // Check username availability
       while (await User.findOne({ username })) {
         username = `${baseUsername}${suffix++}`;
       }
 
       user = new User({
         email,
-        firstName: given_name,
-        lastName: family_name,
+        firstName: given_name || 'Google',
+        lastName: family_name || 'User',
         username,
+        googleId,
         image: picture || '/default-avatar.png',
         isGoogleUser: true,
-        password: undefined, // Avoid saving password for Google login
+        isVerified: true // Google users are automatically verified
       });
 
       await user.save();
     } else {
-      // Update user with the Google image
-      user.image = picture || user.image;  // Keep existing custom image if Google image is not provided
+      // Update user with Google data if missing
+      if (!user.googleId) user.googleId = googleId;
+      if (!user.image && picture) user.image = picture;
+      user.isVerified = true;
       await user.save();
     }
 
-    // Generate a JWT token with 7 days expiry
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user._id,
+        isGoogleUser: true 
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '7d' }
+    );
 
     return res.status(200).json({
       success: true,
@@ -65,12 +100,26 @@ const googleLogin = async (req, res) => {
         username: user.username,
         email: user.email,
         image: user.image,
+        role: user.role || 'student'
       },
     });
 
   } catch (error) {
     console.error('Google login error:', error);
-    return res.status(401).json({ success: false, message: 'Google login failed.', error: error.message });
+    
+    // Specific error handling
+    if (error.message.includes('Malformed')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Google token format'
+      });
+    }
+    
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Google authentication failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
