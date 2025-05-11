@@ -1,56 +1,145 @@
-import fs from 'fs';
-import path from 'path';
-import User from '../models/studentUserModel.js';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import bcrypt from 'bcrypt';  // <-- make sure bcrypt is imported
+import User from '../models/userModel.js';
+import cloudinary from 'cloudinary';
+import multer from 'multer';
+import bcrypt from 'bcryptjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: 'dosnrrtpt',
+  api_key: '425866147882238',
+  api_secret: '17UQYKll8B154KAT7NZP-vORatU',
+});
+
+// Multer memory storage for files
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
+const uploadToCloudinary = (buffer, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.v2.uploader.upload_stream(options, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+    stream.end(buffer);
+  });
+};
+
+const extractPublicId = (url) => {
+  if (!url) return null;
+  const parts = url.split('/');
+  const fileName = parts[parts.length - 1];
+  const publicId = fileName.substring(0, fileName.lastIndexOf('.'));
+  return `${parts[parts.length - 2]}/${publicId}`;
+};
 
 const updateProfile = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const { firstName, lastName, email, bio } = req.body;
-
+    const userId = req.user.id;
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // Update fields
-    if (firstName) user.firstName = firstName;
-    if (lastName) user.lastName = lastName;
-    if (email) user.email = email;
-    if (bio) user.bio = bio;
+    const updates = {};
 
-    // Handle new image upload
-    if (req.file) {
-      // Delete old image
-      if (user.image) {
-        const oldImagePath = path.join(__dirname, '..', user.image);
-        console.log('Old Image Path:', oldImagePath);
+    // Text fields
+    const textFields = [
+      'firstName', 'lastName', 'username', 'email', 'bio',
+      'gender', 'phoneNumber', 'highestQualification', 'institutionName',
+      'graduationYear', 'experienceYears'
+    ];
 
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-          console.log('Old image deleted successfully.');
-        }
+    textFields.forEach(field => {
+      if (req.body[field]) updates[field] = req.body[field];
+    });
+
+    // Nested address
+    if (req.body.address) {
+      try {
+        updates.address = typeof req.body.address === 'string'
+          ? JSON.parse(req.body.address)
+          : req.body.address;
+      } catch (e) {
+        console.error('Error parsing address:', e);
       }
-
-      // Save new image as relative path
-      const relativeImagePath = path.join('uploads', req.file.filename);
-      console.log('New image relative path:', relativeImagePath);
-      user.image = relativeImagePath;
     }
 
-    await user.save();
+    // Date field
+    if (req.body.dateOfBirth) {
+      updates.dateOfBirth = new Date(req.body.dateOfBirth);
+    }
 
-    res.status(200).json({ message: 'Profile updated successfully', user });
-  } catch (err) {
-    console.error('Error saving user:', err);
-    res.status(500).json({ error: 'Failed to save the updated user.' });
+    // Image upload (replace + delete old)
+    if (req.files?.image?.[0]) {
+      if (user.image) {
+        try {
+          const publicId = extractPublicId(user.image);
+          await cloudinary.v2.uploader.destroy(publicId, { resource_type: 'image' });
+        } catch (err) {
+          console.error('Error deleting old image:', err.message);
+        }
+      }
+      const imageResult = await uploadToCloudinary(req.files.image[0].buffer, {
+        folder: 'user-images',
+        resource_type: 'image',
+      });
+      updates.image = imageResult.secure_url;
+    }
+
+    // Resume upload (replace + delete old)
+    if (req.files?.resume?.[0]) {
+      if (user.resumeUrl) {
+        try {
+          const publicId = extractPublicId(user.resumeUrl);
+          await cloudinary.v2.uploader.destroy(publicId, { resource_type: 'raw' });
+        } catch (err) {
+          console.error('Error deleting old resume:', err.message);
+        }
+      }
+      const resumeResult = await uploadToCloudinary(req.files.resume[0].buffer, {
+        folder: 'user-resumes',
+        resource_type: 'raw',
+      });
+      updates.resumeUrl = resumeResult.secure_url;
+    }
+
+    // Add certificates (additive, don't replace)
+    if (req.files?.educationCertificates) {
+      const certPromises = req.files.educationCertificates.map(file =>
+        uploadToCloudinary(file.buffer, {
+          folder: 'user-certificates',
+          resource_type: 'auto',
+        })
+      );
+      const certResults = await Promise.all(certPromises);
+      const newCerts = certResults.map(res => res.secure_url);
+      updates.educationCertificates = [...(user.educationCertificates || []), ...newCerts];
+    }
+
+    // Final DB update
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({
+      message: 'Error updating profile',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
   }
 };
 
-// Change Password
+// Upload middleware
+const uploadMiddleware = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'educationCertificates', maxCount: 10 },
+  { name: 'resume', maxCount: 1 },
+]);
+
+// Change password function
 const changePassword = async (req, res) => {
   const userId = req.user._id;
   const { currentPassword, newPassword } = req.body;
@@ -104,4 +193,4 @@ const changePassword = async (req, res) => {
   }
 };
 
-export { updateProfile, changePassword };
+export { updateProfile, uploadMiddleware, changePassword };

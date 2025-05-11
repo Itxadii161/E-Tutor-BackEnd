@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import User from '../models/studentUserModel.js';
+import User from '../models/userModel.js';
 import { OAuth2Client } from 'google-auth-library';
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -125,30 +125,33 @@ const googleLogin = async (req, res) => {
 
 // ✅ User registration
 const signup = async (req, res) => {
-  const { firstName, lastName, username, email, password, confirmPassword, title = "Student" } = req.body;
-
-  if (!firstName || !lastName || !username || !email || !password) {
-    return res.status(400).json({ success: false, message: 'Required fields are missing.' });
-  }
-
-  if (password !== confirmPassword) {
-    return res.status(400).json({ success: false, message: 'Passwords do not match.' });
-  }
-
   try {
-    // Check if email or username already exists
-    const userExists = await User.findOne({ $or: [{ email }, { username }] });
-    if (userExists) {
-      return res.status(400).json({ 
-        success: false, 
-        message: userExists.email === email 
-          ? 'User already exists with that email.' 
-          : 'Username is already taken.'
+    const { firstName, lastName, username, email, password, confirmPassword, title = "Student" } = req.body;
+
+    // Validate input
+    if (!firstName || !lastName || !username || !email || !password || !confirmPassword) {
+      return res.status(400).json({ success: false, message: 'All fields are required.' });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Passwords do not match.' });
+    }
+
+    // Check for existing user
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: existingUser.email === email 
+          ? 'Email already in use' 
+          : 'Username already taken'
       });
     }
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Create new user
     const newUser = new User({
       firstName,
       lastName,
@@ -156,37 +159,40 @@ const signup = async (req, res) => {
       email,
       title,
       password: hashedPassword,
-      image: '', // Initialize empty image
-      role: 'student' // Explicitly set role
+      image: '',
+      role: 'Student'
     });
 
     await newUser.save();
 
-    // Generate JWT token with 7 days expiry
-    const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, { 
-      expiresIn: '7d' 
-    });
+    // Create token
+    const token = jwt.sign(
+      { userId: newUser._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '7d' }
+    );
 
-    res.status(201).json({
+    // Return success response
+    return res.status(201).json({
       success: true,
-      message: 'User created successfully!',
-      token, // Send token to frontend
+      message: 'Registration successful',
+      token,
       user: {
-        id: newUser._id,
-        email: newUser.email,
-        username: newUser.username,
+        _id: newUser._id,
         firstName: newUser.firstName,
         lastName: newUser.lastName,
-        title: newUser.title,
-        image: newUser.image,
+        email: newUser.email,
+        username: newUser.username,
         role: newUser.role
-      },
+      }
     });
+
   } catch (error) {
-    console.error("Signup error:", error);
-    res.status(500).json({
+    console.error('Signup error:', error);
+    return res.status(500).json({
       success: false,
-      message: "Registration failed. Please try again."
+      message: 'Registration failed. Please try again.',
+      error: error.message // Include error message for debugging
     });
   }
 };

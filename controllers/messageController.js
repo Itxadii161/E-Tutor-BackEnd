@@ -1,7 +1,7 @@
-import User from '../models/studentUserModel.js';
+import User from '../models/userModel.js';
 import Message from '../models/Message.js';
 import Conversation from '../models/conversation.js';
-import Hiring from '../models/hiring.js';
+// import Hiring from '../models/hiring.js';
 
 // ✅ Embedded canSendMessage logic
 const canSendMessage = async (sender, receiver) => {

@@ -8,6 +8,7 @@ import messageRoutes from './routes/messageRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+
 // Fix for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,12 +35,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve uploaded images statically
-app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
+// app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
 app.use('/api/users', studentUserRoutes);
-app.use('/api', tutorRoutes);
+// app.use('/api', tutorRoutes);
 app.use('/api/messages', messageRoutes);
+
+app.use('/api/tutor', tutorRoutes);
+
 
 // Test Route
 app.get('/', (req, res) => {
