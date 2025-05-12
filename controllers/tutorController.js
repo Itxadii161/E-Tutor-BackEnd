@@ -87,37 +87,43 @@ const getTutors = async (req, res) => {
 
 // Get single tutor's full profile by ID
 const getTutorById = async (req, res) => {
-  const { tutorId } = req.params;
-  
+  const { id } = req.params;
+
   try {
-    const tutor = await User.findById(tutorId).select('-password'); // Exclude password
+    const tutor = await User.findById(id).select('-password');
     if (!tutor) {
       return res.status(404).json({ msg: 'Tutor not found' });
     }
-    res.json(tutor);
+
+    let hasRated = false;
+
+    if (req.user && Array.isArray(tutor.ratings)) {
+      hasRated = tutor.ratings.some(r => r.userId && r.userId.toString() === req.user._id.toString());
+    }
+
+    res.json({ tutor, hasRated });
   } catch (error) {
     console.error(error);
     res.status(500).send('Server error');
   }
 };
 
+
 // Hire a tutor (add user to tutor's hiredBy array)
 const hireTutor = async (req, res) => {
-  const { tutorId } = req.params;
-  const { userId } = req.body; // The userId of the student
-
+  const { tutorId, userId } = req.body;
+  
   try {
     const tutor = await User.findById(tutorId);
     if (!tutor || tutor.role !== 'Tutor') {
       return res.status(404).json({ msg: 'Tutor not found or invalid role' });
     }
 
-    // Check if the user has already hired the tutor
-    if (tutor.hiredBy.includes(userId)) {
-      return res.status(400).json({ msg: 'You have already hired this tutor' });
+    if (tutor.hiredBy.some(id => id.toString() === userId.toString())) {
+      return res.status(400).json({ message: 'You have already hired this tutor' });
     }
+    
 
-    // Add student (user) to the tutor's hiredBy array
     tutor.hiredBy.push(userId);
     await tutor.save();
 
@@ -127,38 +133,58 @@ const hireTutor = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
-
 // Rate a tutor
+// Rate Tutor Controller (Updated)
 const rateTutor = async (req, res) => {
-  const { tutorId } = req.params;
-  const { userId, rating, review } = req.body; // Rating and optional review
-  
+  const { tutorId,  rating, review } = req.body;
+  const userId = req.user.id;
   try {
     const tutor = await User.findById(tutorId);
     if (!tutor || tutor.role !== 'Tutor') {
       return res.status(404).json({ msg: 'Tutor not found or invalid role' });
     }
 
+    // Ensure the user cannot rate themselves
+    if (userId.toString() === tutorId.toString()) {
+      return res.status(400).json({ msg: 'You cannot rate yourself.' });
+    }
+
+    // Ensure the rating is between 1 and 5
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ msg: 'Rating must be between 1 and 5' });
+    }
+
     // Check if the user has already rated this tutor
     const existingRating = tutor.ratings.find(r => r.userId.toString() === userId.toString());
     if (existingRating) {
-      return res.status(400).json({ msg: 'You have already rated this tutor' });
+      // Update the rating and review without changing the review count
+      existingRating.rating = rating;
+      existingRating.review = review;
+
+      // Recalculate average rating
+// Incorrect order (existingRating is false)
+tutor.ratings.push({ userId, rating, review });
+const totalRatings = tutor.ratings.length;
+const totalRatingValue = tutor.ratings.reduce((acc, r) => acc + r.rating, 0);
+tutor.averageRating = totalRatingValue / totalRatings;
+
+    } else {
+      // Add new rating
+      tutor.ratings.push({ userId, rating, review });
+      
+      // Recalculate average rating
+      const totalRatings = tutor.ratings.length;
+      const totalRatingValue = tutor.ratings.reduce((acc, r) => acc + r.rating, 0);
+      tutor.averageRating = totalRatingValue / totalRatings;
     }
 
-    // Add the rating to the tutor's ratings array
-    tutor.ratings.push({ userId, rating, review });
-    tutor.totalReviews += 1;
-
-    // Recalculate the average rating
-    const averageRating = tutor.ratings.reduce((acc, r) => acc + r.rating, 0) / tutor.totalReviews;
-    tutor.averageRating = averageRating;
-
+    // Save the updated tutor
     await tutor.save();
 
-    res.json({ msg: 'Rating submitted successfully', averageRating });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Server error');
+    res.status(200).json({ msg: 'Rating submitted successfully', tutor });
+  } catch (err) {
+    console.error("Rate tutor error:", err);
+    res.status(500).json({ msg: 'Server error while submitting rating.' });
   }
 };
 

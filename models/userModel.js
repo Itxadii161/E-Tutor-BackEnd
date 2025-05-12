@@ -50,7 +50,12 @@ const userSchema = new mongoose.Schema(
     idProofUrl: String,
 
     // Tutor Specific
-    subjectsOfExpertise: [String], // Quick tags
+    // subjectsOfExpertise: [String], // Quick tags
+    subjectsOfExpertise: {
+      type: [String], // <-- array of strings
+      default: [],
+    },
+    
     experienceYears: Number,
     availability: {
       days: [String],        // e.g., ["Monday", "Wednesday"]

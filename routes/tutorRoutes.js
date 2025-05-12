@@ -9,7 +9,7 @@ const router = express.Router();
 router.post('/becometutor', authUser, becomeTutor);
 
 router.get('/', getTutors);
-router.get('/:id', validateObjectId, getTutorById );// Add this middleware
+router.get('/:id', authUser, getTutorById );// Add this middleware
   router.post('/rate', authUser, rateTutor);
 router.post('/hire', authUser, hireTutor);
 // router.get('/rating-check', authUser, checkUserRating);

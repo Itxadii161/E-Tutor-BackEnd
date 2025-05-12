@@ -113,6 +113,19 @@ const updateProfile = async (req, res) => {
       const newCerts = certResults.map(res => res.secure_url);
       updates.educationCertificates = [...(user.educationCertificates || []), ...newCerts];
     }
+// Handle subjectsOfExpertise (array sent as JSON string)
+if (req.body.subjectsOfExpertise) {
+  try {
+    const parsedSubjects = JSON.parse(req.body.subjectsOfExpertise);
+    if (Array.isArray(parsedSubjects)) {
+      updates.subjectsOfExpertise = parsedSubjects;
+    } else {
+      console.warn('subjectsOfExpertise is not an array');
+    }
+  } catch (e) {
+    console.error('Error parsing subjectsOfExpertise:', e.message);
+  }
+}
 
     // Final DB update
     const updatedUser = await User.findByIdAndUpdate(
