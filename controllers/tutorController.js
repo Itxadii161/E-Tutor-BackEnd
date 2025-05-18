@@ -1,7 +1,4 @@
-// import mongoose from 'mongoose';
 import User from '../models/userModel.js';
-// import TutorRating from '../models/tutorRatingModel.js';
-// import TutorHire from '../models/tutorHireModel.js';
 
 const becomeTutor = async (req, res) => {
   try {
@@ -10,12 +7,13 @@ const becomeTutor = async (req, res) => {
     }
 
     const userId = req.user._id;
-    const {
+    let {
       fullName,
       dateOfBirth,
       gender,
       phoneNumber,
-      address,
+      city,
+      country,
       highestQualification,
       institutionName,
       graduationYear,
@@ -24,15 +22,36 @@ const becomeTutor = async (req, res) => {
       pastInstitutions,
       certifications,
       availability,
-      resumeUrl,
-      educationCertificates,
-      idProofUrl,
       hourlyRate,
     } = req.body;
 
-    if (!resumeUrl || !educationCertificates || educationCertificates.length === 0) {
+    // Normalize gender to lowercase for enum validation
+    if (gender) {
+      gender = gender.toLowerCase();
+    }
+
+    // Validate availability (ensure it's an object)
+    let availabilityObj = {};
+    try {
+      availabilityObj = availability ? JSON.parse(availability) : { days: [], timeSlots: [] };
+    } catch {
+      availabilityObj = { days: [], timeSlots: [] };
+    }
+
+    // Get uploaded files URLs from req.files (Cloudinary URLs)
+    const resumeFile = req.files['resumeUrl']?.[0];
+    const idProofFile = req.files['idProofUrl']?.[0];
+    const educationFiles = req.files['educationCertificates'] || [];
+
+    if (!resumeFile || educationFiles.length === 0) {
       return res.status(400).json({ error: "Resume and at least one education certificate are required." });
     }
+
+    const resumeUrl = resumeFile.path;
+    const idProofUrl = idProofFile ? idProofFile.path : null;
+    const educationCertificates = educationFiles.map(file => file.path);
+
+    const address = { city, country };
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
@@ -45,31 +64,29 @@ const becomeTutor = async (req, res) => {
         highestQualification,
         institutionName,
         graduationYear,
-        subjectsOfExpertise,
+        subjectsOfExpertise: subjectsOfExpertise?.split(',').map(s => s.trim()),
         experienceYears,
-        pastInstitutions,
-        certifications,
-        availability,
+        pastInstitutions: pastInstitutions?.split(',').map(s => s.trim()),
+        certifications: certifications?.split(',').map(s => s.trim()),
+        availability: availabilityObj,
         resumeUrl,
         educationCertificates,
         idProofUrl,
         hourlyRate,
-        role: "Tutor",
+        role: "Pending-Tutor",
       },
       { new: true, runValidators: true }
     );
 
     res.status(200).json({
-      message: "Tutor application submitted successfully.",
+      message: "Tutor application submitted successfully and pending admin approval.",
       user: updatedUser,
     });
   } catch (err) {
     console.error("Apply as tutor error:", err);
     res.status(500).json({ error: "Server error while submitting tutor application." });
   }
-};
-
-// import User from '../models/userModel';
+}
 
 // Get all tutors (Only users with role "Tutor")
 const getTutors = async (req, res) => {
@@ -91,6 +108,7 @@ const getTutorById = async (req, res) => {
 
   try {
     const tutor = await User.findById(id).select('-password');
+    
     if (!tutor) {
       return res.status(404).json({ msg: 'Tutor not found' });
     }
@@ -110,30 +128,31 @@ const getTutorById = async (req, res) => {
 
 
 // Hire a tutor (add user to tutor's hiredBy array)
-const hireTutor = async (req, res) => {
-  const { tutorId, userId } = req.body;
+// const hireTutor = async (req, res) => {
+//   const { tutorId, userId } = req.body;
   
-  try {
-    const tutor = await User.findById(tutorId);
-    if (!tutor || tutor.role !== 'Tutor') {
-      return res.status(404).json({ msg: 'Tutor not found or invalid role' });
-    }
+//   try {
+//     const tutor = await User.findById(tutorId);
+//     if (!tutor || tutor.role !== 'Tutor') {
+//       return res.status(404).json({ msg: 'Tutor not found or invalid role' });
+//     }
 
-    if (tutor.hiredBy.some(id => id.toString() === userId.toString())) {
-      return res.status(400).json({ message: 'You have already hired this tutor' });
-    }
+//     if (tutor.hiredBy.some(id => id.toString() === userId.toString())) {
+//       return res.status(400).json({ message: 'You have already hired this tutor' });
+//     }
     
 
-    tutor.hiredBy.push(userId);
-    await tutor.save();
+//     tutor.hiredBy.push(userId);
+//     await tutor.save();
 
-    res.json({ msg: 'Hiring request sent successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Server error');
-  }
-};
+//     res.json({ msg: 'Hiring request sent successfully' });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).send('Server error');
+//   }
+// };
 // Rate a tutor
+
 // Rate Tutor Controller (Updated)
 const rateTutor = async (req, res) => {
   const { tutorId,  rating, review } = req.body;
@@ -155,28 +174,22 @@ const rateTutor = async (req, res) => {
     }
 
     // Check if the user has already rated this tutor
-    const existingRating = tutor.ratings.find(r => r.userId.toString() === userId.toString());
-    if (existingRating) {
-      // Update the rating and review without changing the review count
-      existingRating.rating = rating;
-      existingRating.review = review;
+   const existingRating = tutor.ratings.find(r => r.userId.toString() === userId.toString());
 
-      // Recalculate average rating
-// Incorrect order (existingRating is false)
-tutor.ratings.push({ userId, rating, review });
+if (existingRating) {
+  // Just update the rating/review
+  existingRating.rating = rating;
+  existingRating.review = review;
+} else {
+  // Add a new rating
+  tutor.ratings.push({ userId, rating, review });
+}
+
+// Recalculate average rating
 const totalRatings = tutor.ratings.length;
 const totalRatingValue = tutor.ratings.reduce((acc, r) => acc + r.rating, 0);
 tutor.averageRating = totalRatingValue / totalRatings;
 
-    } else {
-      // Add new rating
-      tutor.ratings.push({ userId, rating, review });
-      
-      // Recalculate average rating
-      const totalRatings = tutor.ratings.length;
-      const totalRatingValue = tutor.ratings.reduce((acc, r) => acc + r.rating, 0);
-      tutor.averageRating = totalRatingValue / totalRatings;
-    }
 
     // Save the updated tutor
     await tutor.save();
@@ -195,5 +208,5 @@ export {
   // checkUserRating,
   getTutorById,
   rateTutor,
-  hireTutor
+  // hireTutor
 };

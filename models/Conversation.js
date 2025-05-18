@@ -1,11 +1,8 @@
-import mongoose from 'mongoose';
+import mongoose from'mongoose';
 
 const conversationSchema = new mongoose.Schema({
-  student: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  tutor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  startedByStudent: { type: Boolean, required: true },
-  createdAt: { type: Date, default: Date.now }
-});
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+}, { timestamps: true });
 
 const Conversation = mongoose.model('Conversation', conversationSchema);
 export default Conversation;

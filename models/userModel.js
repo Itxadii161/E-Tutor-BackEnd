@@ -11,6 +11,7 @@ const ratingSchema = new mongoose.Schema({
 // User Schema
 const userSchema = new mongoose.Schema(
   {
+    
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     username: { type: String, required: true, unique: true },
@@ -56,6 +57,7 @@ const userSchema = new mongoose.Schema(
       default: [],
     },
     
+    
     experienceYears: Number,
     availability: {
       days: [String],        // e.g., ["Monday", "Wednesday"]
@@ -84,10 +86,19 @@ const userSchema = new mongoose.Schema(
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: [0, 0] }, // [lng, lat]
     },
+    isAdmin: {
+      type: Boolean,
+      default: false
+    },
   },
   { timestamps: true }
 );
-
+userSchema.pre('save', function(next) {
+  if (!this.fullName && (this.firstName || this.lastName)) {
+    this.fullName = `${this.firstName || ''} ${this.lastName || ''}`.trim();
+  }
+  next();
+});
 // Indexing for geospatial queries (if location-based search is needed)
 userSchema.index({ locationCoordinates: '2dsphere' });
 

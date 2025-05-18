@@ -319,14 +319,18 @@ const getUserData = async (req, res) => {
   }
 };
 
-// ✅ Get total students
-const totalStudents = async (req, res) => {
-  try {
-    const total = await User.countDocuments({ role: 'student' });
-    res.json({ total });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to get student count' });
-  }
-};
+// // ✅ Get total students
 
-export { signup, loginUser, getUserRole, getUserData, googleLogin, totalStudents };
+// const totalStudents = async (req, res) => {
+//   try {
+//     const total = await User.countDocuments({ role: 'student' });
+//     res.json({ total });
+//   } catch (error) {
+//     res.status(500).json({ error: 'Failed to get student count' });
+//   }
+// };
+
+
+export { signup, loginUser, getUserRole, getUserData, googleLogin, 
+  // totalStudents
+ };

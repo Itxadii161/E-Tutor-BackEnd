@@ -13,7 +13,11 @@ const authUser = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId);
+    // const user = await User.findById(decoded.userId);
+    const userId = decoded.userId || decoded.id;
+    const user = await User.findById(userId);
+    console.log('Decoded token userId:', userId);
+console.log('Fetched user:', user);
 
     if (!user) {
       return res.status(401).json({ error: 'User not found.' });
@@ -36,3 +40,32 @@ const authUser = async (req, res, next) => {
 };
 
 export { authUser };
+// middleware/authMiddleware.js (continued)
+export const isAdmin = (req, res, next) => {
+  try {
+    // This middleware should be used after authenticate
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required.' 
+      });
+    }
+
+    // Check if user is admin
+    // Note: You'll need to add an isAdmin field to your User model
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied. Admin privileges required.' 
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Admin check error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error during admin verification.' 
+    });
+  }
+};
